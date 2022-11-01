@@ -32,6 +32,9 @@
 ========================================================================================
 	Change Log:
 
+1.12 (01-Nov-2022)
+	- Changed cvar "l4d_pipebomb_reload" to optionally require holding "R" when shoving. Requested by "Iciaria".
+
 1.11 (14-Nov-2021)
 	- Changes to fix warnings when compiling on SourceMod 1.11.
 	- Updated GameData signatures to avoid breaking when detoured by the "Left4DHooks" plugin.
@@ -160,7 +163,7 @@ public void OnPluginStart()
 	g_hCvarModesOff = CreateConVar(	"l4d_pipebomb_shove_modes_off",		"",				"Turn off the plugin in these game modes, separate by commas (no spaces). (Empty = none).", CVAR_FLAGS );
 	g_hCvarModesTog = CreateConVar(	"l4d_pipebomb_shove_modes_tog",		"0",			"Turn on the plugin in these game modes. 0=All, 1=Coop, 2=Survival, 4=Versus, 8=Scavenge. Add numbers together.", CVAR_FLAGS );
 	g_hCvarInfected = CreateConVar(	"l4d_pipebomb_shove_infected",		"511",			"1=Common, 2=Witch, 4=Smoker, 8=Boomer, 16=Hunter, 32=Spitter, 64=Jockey, 128=Charger, 256=Tank, 511=All.", CVAR_FLAGS );
-	g_hCvarReload = CreateConVar(	"l4d_pipebomb_reload",				"0",			"0=Off, 1=Trigger with reload key, 2=Only trigger with reload key.", CVAR_FLAGS );
+	g_hCvarReload = CreateConVar(	"l4d_pipebomb_reload",				"0",			"0=Shove key, 1=Trigger with reload key, 2=Only trigger with reload key, 3=Trigger with reload key and shove.", CVAR_FLAGS );
 	g_hCvarTime = CreateConVar(		"l4d_pipebomb_time",				"6",			"Fuse duration before detonation. Game default is 6 seconds.", CVAR_FLAGS );
 	CreateConVar(					"l4d_pipebomb_shove_version",		PLUGIN_VERSION,	"Pipebomb Shove plugin version.", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	AutoExecConfig(true,			"l4d_pipebomb_shove");
@@ -204,17 +207,17 @@ public void OnConfigsExecuted()
 	IsAllowed();
 }
 
-public void ConVarChanged_Allow(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_Allow(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	IsAllowed();
 }
 
-public void ConVarChanged_Cvars(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_Cvars(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	GetCvars();
 }
 
-public void ConVarChanged_Pipe(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_Pipe(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	FuseChanged();
 }
@@ -314,7 +317,7 @@ bool IsAllowedGameMode()
 	return true;
 }
 
-public void OnGamemode(const char[] output, int caller, int activator, float delay)
+void OnGamemode(const char[] output, int caller, int activator, float delay)
 {
 	if( strcmp(output, "OnCoop") == 0 )
 		g_iCurrentMode = 1;
@@ -331,7 +334,7 @@ public void OnGamemode(const char[] output, int caller, int activator, float del
 // ====================================================================================================
 //					EVENTS
 // ====================================================================================================
-public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
+void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
 	int userid = event.GetInt("userid");
 	if( userid )
@@ -371,7 +374,7 @@ void MatchClients(int client)
 	}
 }
 
-public void Event_EntityShoved(Event event, const char[] name, bool dontBroadcast)
+void Event_EntityShoved(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCvarReload != 2 )
 	{
@@ -381,47 +384,54 @@ public void Event_EntityShoved(Event event, const char[] name, bool dontBroadcas
 		{
 			int client = GetClientOfUserId(event.GetInt("attacker"));
 
-			int weapon = CheckWeapon(client);
-			if( weapon )
+			if( g_iCvarReload != 3 || GetClientButtons(client) & IN_RELOAD )
 			{
-				int target = event.GetInt("entityid");
-
-				char sTemp[10];
-				GetEntityClassname(target, sTemp, sizeof(sTemp));
-
-				if( (infected && strcmp(sTemp, "infected") == 0 ) )
+				int weapon = CheckWeapon(client);
+				if( weapon )
 				{
-					if( GetEntProp(target, Prop_Data, "m_iHealth") >= 1 )
+					int target = event.GetInt("entityid");
+
+					char sTemp[10];
+					GetEntityClassname(target, sTemp, sizeof(sTemp));
+
+					if( (infected && strcmp(sTemp, "infected") == 0 ) )
 					{
-						HurtPlayer(target, client, weapon, 0);
+						if( GetEntProp(target, Prop_Data, "m_iHealth") >= 1 )
+						{
+							HurtPlayer(target, client, weapon, 0);
+						}
 					}
-				}
-				else if( (witch && strcmp(sTemp, "witch") == 0) )
-				{
-					HurtPlayer(target, client, weapon, -1);
+					else if( (witch && strcmp(sTemp, "witch") == 0) )
+					{
+						HurtPlayer(target, client, weapon, -1);
+					}
 				}
 			}
 		}
 	}
 }
 
-public void Event_PlayerShoved(Event event, const char[] name, bool dontBroadcast)
+void Event_PlayerShoved(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCvarInfected && g_iCvarReload != 2 )
 	{
 		int client = GetClientOfUserId(event.GetInt("attacker"));
-		int target = GetClientOfUserId(event.GetInt("userid"));
 
-		if( GetClientTeam(target) == 3 )
+		if( g_iCvarReload != 3 || GetClientButtons(client) & IN_RELOAD )
 		{
-			int weapon = CheckWeapon(client);
-			if( weapon )
+			int target = GetClientOfUserId(event.GetInt("userid"));
+
+			if( GetClientTeam(target) == 3 )
 			{
-				int class = GetEntProp(target, Prop_Send, "m_zombieClass") + 1;
-				if( class == g_iClassTank ) class = 8;
-				if( g_iCvarInfected & (1 << class) )
+				int weapon = CheckWeapon(client);
+				if( weapon )
 				{
-					HurtPlayer(target, client, weapon, class -1);
+					int class = GetEntProp(target, Prop_Send, "m_zombieClass") + 1;
+					if( class == g_iClassTank ) class = 8;
+					if( g_iCvarInfected & (1 << class) )
+					{
+						HurtPlayer(target, client, weapon, class -1);
+					}
 				}
 			}
 		}
@@ -431,7 +441,7 @@ public void Event_PlayerShoved(Event event, const char[] name, bool dontBroadcas
 static float g_fLastUse;
 public Action OnPlayerRunCmd(int client, int &buttons)
 {
-	if( g_bCvarAllow && g_iCvarReload != 0 && buttons & IN_RELOAD )
+	if( g_bCvarAllow && g_iCvarReload != 0 && g_iCvarReload != 3 && buttons & IN_RELOAD )
 	{
 		float fNow = GetEngineTime();
 		if( fNow - g_fLastUse > 0.2 )
