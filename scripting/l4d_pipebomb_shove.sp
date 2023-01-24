@@ -1,6 +1,6 @@
 /*
 *	Pipebomb Shove
-*	Copyright (C) 2021 Silvers
+*	Copyright (C) 2023 Silvers
 *
 *	This program is free software: you can redistribute it and/or modify
 *	it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION 		"1.12"
+#define PLUGIN_VERSION 		"1.13"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,10 @@
 
 ========================================================================================
 	Change Log:
+
+1.13 (24-Jan-2023)
+	- L4D1: Fixed Special Infected increased movement speed when the Pipebomb is attached. Compatible with the "Lagged Movement - Plugin Conflict Resolver" plugin.
+	- Thanks to "Ja-Forces" for reporting and testing.
 
 1.12 (01-Nov-2022)
 	- Changed cvar "l4d_pipebomb_reload" to optionally require holding "R" when shoving. Requested by "Iciaria".
@@ -88,6 +92,7 @@
 #pragma newdecls required
 
 #include <sourcemod>
+#include <sdkhooks>
 #include <sdktools>
 
 #define CVAR_FLAGS			FCVAR_NOTIFY
@@ -101,8 +106,10 @@
 Handle sdkActivatePipe;
 ConVar g_hCvarAllow, g_hCvarDamage, g_hCvarDistance, g_hCvarInfected, g_hCvarL4DTime, g_hCvarMPGameMode, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarReload, g_hCvarTime;
 int g_iClients[MAX_GRENADES], g_iCvarInfected, g_iCvarL4DTime, g_iCvarReload, g_iCvarTime, g_iGrenades[MAX_GRENADES], g_iClassTank;
-bool g_bCvarAllow, g_bMapStarted, g_bCvarSwitching, g_bLeft4Dead2;
+bool g_bCvarAllow, g_bMapStarted, g_bCvarSwitching, g_bLeft4Dead2, g_bLaggedMovement;
 float g_fCvarDamage, g_fCvarDistance;
+
+native any L4D_LaggedMovement(int client, float value, bool force = false);
 
 
 
@@ -125,14 +132,33 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	else if( test == Engine_Left4Dead2 ) g_bLeft4Dead2 = true;
 	else
 	{
+		MarkNativeAsOptional("L4D_LaggedMovement");
+
 		strcopy(error, err_max, "Plugin only supports Left 4 Dead 1 & 2.");
 		return APLRes_SilentFailure;
 	}
 	return APLRes_Success;
 }
 
+public void OnLibraryAdded(const char[] name)
+{
+	if( strcmp(name, "LaggedMovement") == 0 )
+	{
+		g_bLaggedMovement = true;
+	}
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if( strcmp(name, "LaggedMovement") == 0 )
+	{
+		g_bLaggedMovement = false;
+	}
+}
+
 public void OnPluginStart()
 {
+	// GameData
 	char sPath[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, sPath, sizeof(sPath), "gamedata/%s.txt", GAMEDATA);
 	if( FileExists(sPath) == false ) SetFailState("\n==========\nMissing required file: \"%s\".\nRead installation instructions again.\n==========", sPath);
@@ -156,6 +182,7 @@ public void OnPluginStart()
 
 	delete hGameData;
 
+	// Cvars
 	g_hCvarAllow = CreateConVar(	"l4d_pipebomb_shove_allow",			"1",			"0=Plugin off, 1=Plugin on.", CVAR_FLAGS );
 	g_hCvarDamage = CreateConVar(	"l4d_pipebomb_shove_damage",		"25",			"0=Default. Other values sets the explosion damage.", CVAR_FLAGS );
 	g_hCvarDistance = CreateConVar(	"l4d_pipebomb_shove_distance",		"400",			"0=Default. Other value sets the explosion damage range.", CVAR_FLAGS );
@@ -185,6 +212,20 @@ public void OnPluginStart()
 	FuseChanged();
 
 	g_iClassTank = g_bLeft4Dead2 ? 9 : 6;
+}
+
+public void OnPluginEnd()
+{
+	if( !g_bLeft4Dead2 )
+	{
+		for( int i = 0; i < MAX_GRENADES; i++ )
+		{
+			if( g_iGrenades[i] && EntRefToEntIndex(g_iGrenades[i]) != INVALID_ENT_REFERENCE && g_iClients[i] && IsClientInGame(g_iClients[i]) )
+			{
+				SetEntPropFloat(g_iClients[i], Prop_Send, "m_flLaggedMovementValue", g_bLaggedMovement ? L4D_LaggedMovement(i, 1.0, true) : 1.0);
+			}
+		}
+	}
 }
 
 
@@ -334,6 +375,11 @@ void OnGamemode(const char[] output, int caller, int activator, float delay)
 // ====================================================================================================
 //					EVENTS
 // ====================================================================================================
+public void OnClientDisconnect(int client)
+{
+	MatchClients(client);
+}
+
 void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
 	int userid = event.GetInt("userid");
@@ -361,6 +407,12 @@ void MatchClients(int client)
 	{
 		if( g_iClients[i] == client )
 		{
+			if( client > 0 && client <= MaxClients )
+			{
+				SDKUnhook(client, SDKHook_PreThinkPost, PreThinkPost);
+				SetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue", g_bLaggedMovement ? L4D_LaggedMovement(client, 1.0, true) : 1.0);
+			}
+
 			int entity = g_iGrenades[i];
 			g_iClients[i] = 0;
 			g_iGrenades[i] = 0;
@@ -398,12 +450,12 @@ void Event_EntityShoved(Event event, const char[] name, bool dontBroadcast)
 					{
 						if( GetEntProp(target, Prop_Data, "m_iHealth") >= 1 )
 						{
-							HurtPlayer(target, client, weapon, 0);
+							AttachPipe(target, client, weapon, 0);
 						}
 					}
 					else if( (witch && strcmp(sTemp, "witch") == 0) )
 					{
-						HurtPlayer(target, client, weapon, -1);
+						AttachPipe(target, client, weapon, -1);
 					}
 				}
 			}
@@ -430,7 +482,7 @@ void Event_PlayerShoved(Event event, const char[] name, bool dontBroadcast)
 					if( class == g_iClassTank ) class = 8;
 					if( g_iCvarInfected & (1 << class) )
 					{
-						HurtPlayer(target, client, weapon, class -1);
+						AttachPipe(target, client, weapon, class -1);
 					}
 				}
 			}
@@ -438,6 +490,11 @@ void Event_PlayerShoved(Event event, const char[] name, bool dontBroadcast)
 	}
 }
 
+
+
+// ====================================================================================================
+//					SHOVE
+// ====================================================================================================
 static float g_fLastUse;
 public Action OnPlayerRunCmd(int client, int &buttons)
 {
@@ -477,12 +534,12 @@ void DoKey(int client, int target)
 				{
 					if( GetEntProp(target, Prop_Data, "m_iHealth") >= 1 )
 					{
-						HurtPlayer(target, client, weapon, 0);
+						AttachPipe(target, client, weapon, 0);
 					}
 				}
 				else if( (witch && strcmp(sTemp, "witch") == 0) )
 				{
-					HurtPlayer(target, client, weapon, -1);
+					AttachPipe(target, client, weapon, -1);
 				}
 			}
 		} else {
@@ -492,7 +549,7 @@ void DoKey(int client, int target)
 				if( class == g_iClassTank ) class = 8;
 				if( g_iCvarInfected & (1 << class) )
 				{
-					HurtPlayer(target, client, weapon, class -1);
+					AttachPipe(target, client, weapon, class -1);
 				}
 			}
 		}
@@ -515,7 +572,12 @@ int CheckWeapon(int client)
 	return 0;
 }
 
-void HurtPlayer(int target, int client, int weapon, int special)
+
+
+// ====================================================================================================
+//					CREATE PIPE BOMB
+// ====================================================================================================
+void AttachPipe(int target, int client, int weapon, int special)
 {
 	int index = -1;
 
@@ -531,7 +593,7 @@ void HurtPlayer(int target, int client, int weapon, int special)
 	if( index == -1 ) return;
 
 	g_bCvarSwitching = true;
-	g_hCvarL4DTime.IntValue = g_iCvarTime;
+	g_hCvarL4DTime.SetInt(g_iCvarTime);
 
 	RemovePlayerItem(client, weapon);
 	RemoveEntity(weapon);
@@ -561,7 +623,7 @@ void HurtPlayer(int target, int client, int weapon, int special)
 		SetVariantString("leye");
 	else if( special == 1 )
 		SetVariantString("smoker_mouth");
-	else if( special == 3 || special == 5  || special == 6)
+	else if( special == 3 || special == 5 || special == 6 )
 		SetVariantString(GetRandomInt(0, 1) ? "rhand" : "lhand");
 	else
 		SetVariantString("mouth");
@@ -569,10 +631,68 @@ void HurtPlayer(int target, int client, int weapon, int special)
 	AcceptEntityInput(entity, "SetParentAttachment", target);
 	TeleportEntity(entity, NULL_VECTOR, view_as<float>({ 90.0, 0.0, 0.0 }), NULL_VECTOR);
 
-	g_hCvarL4DTime.IntValue = g_iCvarL4DTime;
+	// Scale the Special Infected speed in L4D1 because for whatever reason when attaching the pipebomb they speed up
+	if( !g_bLeft4Dead2 && target <= MaxClients )
+	{
+		SDKHook(target, SDKHook_PreThinkPost, PreThinkPost);
+	}
+
+	// Reset pipebomb detonate time
+	g_hCvarL4DTime.SetInt(g_iCvarL4DTime);
 	g_bCvarSwitching = false;
 }
 
+
+
+// ====================================================================================================
+//					L4D1 - FIX MOVEMENT SPEED
+// ====================================================================================================
+void PreThinkPost(int client)
+{
+	for( int i = 0; i < MAX_GRENADES; i++ )
+	{
+		if( g_iClients[i] == client && g_iGrenades[i] && EntRefToEntIndex(g_iGrenades[i]) != INVALID_ENT_REFERENCE )
+		{
+			// =========================
+			// Plugins should include this code within their PreThinkPost function when modifying the m_flLaggedMovementValue value to prevent bugs
+			// Written by "Silvers"
+			// =========================
+			// Fix movement speed bug when jumping or staggering
+			if( GetEntProp(client, Prop_Send, "m_hGroundEntity") == -1 || GetEntPropFloat(client, Prop_Send, "m_staggerTimer", 1) > -1.0 )
+			{
+				// Fix jumping resetting velocity to default
+				float value = GetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue");
+				if( value != 1.0 )
+				{
+					float vVec[3];
+					GetEntPropVector(client, Prop_Data, "m_vecVelocity", vVec);
+					float height = vVec[2];
+
+					ScaleVector(vVec, value);
+					vVec[2] = height; // Maintain default jump height
+
+					TeleportEntity(client, NULL_VECTOR, NULL_VECTOR, vVec);
+				}
+
+				SetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue", g_bLaggedMovement ? L4D_LaggedMovement(client, 1.0, true) : 1.0);
+				return;
+			}
+			// =========================
+
+			SetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue", g_bLaggedMovement ? L4D_LaggedMovement(client, 0.5, true) : 0.5);
+
+			return;
+		}
+	}
+
+	SDKUnhook(client, SDKHook_PreThinkPost, PreThinkPost);
+}
+
+
+
+// ====================================================================================================
+//					PARTICLES
+// ====================================================================================================
 void CreateParticle(int target, int type)
 {
 	int entity = CreateEntityByName("info_particle_system");
