@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION 		"1.13"
+#define PLUGIN_VERSION 		"1.14"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,10 @@
 
 ========================================================================================
 	Change Log:
+
+1.14 (25-Jan-2023)
+	- L4D1: Added cvar "l4d_pipebomb_speed" to control if player speed is affected by the Pipebomb being attached.
+	- Fixed "MarkNativeAsOptional" being in the incorrect place. Thanks to "HarryPotter" for reporting.
 
 1.13 (24-Jan-2023)
 	- L4D1: Fixed Special Infected increased movement speed when the Pipebomb is attached. Compatible with the "Lagged Movement - Plugin Conflict Resolver" plugin.
@@ -106,7 +110,7 @@
 Handle sdkActivatePipe;
 ConVar g_hCvarAllow, g_hCvarDamage, g_hCvarDistance, g_hCvarInfected, g_hCvarL4DTime, g_hCvarMPGameMode, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarReload, g_hCvarTime;
 int g_iClients[MAX_GRENADES], g_iCvarInfected, g_iCvarL4DTime, g_iCvarReload, g_iCvarTime, g_iGrenades[MAX_GRENADES], g_iClassTank;
-bool g_bCvarAllow, g_bMapStarted, g_bCvarSwitching, g_bLeft4Dead2, g_bLaggedMovement;
+bool g_bCvarAllow, g_bCvarSpeed, g_bMapStarted, g_bCvarSwitching, g_bLeft4Dead2, g_bLaggedMovement;
 float g_fCvarDamage, g_fCvarDistance;
 
 native any L4D_LaggedMovement(int client, float value, bool force = false);
@@ -132,11 +136,12 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	else if( test == Engine_Left4Dead2 ) g_bLeft4Dead2 = true;
 	else
 	{
-		MarkNativeAsOptional("L4D_LaggedMovement");
-
 		strcopy(error, err_max, "Plugin only supports Left 4 Dead 1 & 2.");
 		return APLRes_SilentFailure;
 	}
+
+	MarkNativeAsOptional("L4D_LaggedMovement");
+
 	return APLRes_Success;
 }
 
@@ -192,6 +197,8 @@ public void OnPluginStart()
 	g_hCvarInfected = CreateConVar(	"l4d_pipebomb_shove_infected",		"511",			"1=Common, 2=Witch, 4=Smoker, 8=Boomer, 16=Hunter, 32=Spitter, 64=Jockey, 128=Charger, 256=Tank, 511=All.", CVAR_FLAGS );
 	g_hCvarReload = CreateConVar(	"l4d_pipebomb_reload",				"0",			"0=Shove key, 1=Trigger with reload key, 2=Only trigger with reload key, 3=Trigger with reload key and shove.", CVAR_FLAGS );
 	g_hCvarTime = CreateConVar(		"l4d_pipebomb_time",				"6",			"Fuse duration before detonation. Game default is 6 seconds.", CVAR_FLAGS );
+	if( !g_bLeft4Dead2 )
+		g_hCvarSpeed = CreateConVar("l4d_pipebomb_speed",				"0",			"0=Prevent player speed up when Pipebomb is attached, 1=Allow speed up.", CVAR_FLAGS );
 	CreateConVar(					"l4d_pipebomb_shove_version",		PLUGIN_VERSION,	"Pipebomb Shove plugin version.", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	AutoExecConfig(true,			"l4d_pipebomb_shove");
 
@@ -205,6 +212,7 @@ public void OnPluginStart()
 	g_hCvarDistance.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarInfected.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarReload.AddChangeHook(ConVarChanged_Cvars);
+	g_hCvarSpeed.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarTime.AddChangeHook(ConVarChanged_Cvars);
 
 	g_hCvarL4DTime = FindConVar("pipe_bomb_timer_duration");
@@ -270,11 +278,12 @@ void FuseChanged()
 
 void GetCvars()
 {
-	g_iCvarTime = g_hCvarTime.IntValue;
 	g_fCvarDamage = g_hCvarDamage.FloatValue;
 	g_fCvarDistance = g_hCvarDistance.FloatValue;
 	g_iCvarInfected = g_hCvarInfected.IntValue;
 	g_iCvarReload = g_hCvarReload.IntValue;
+	g_bCvarSpeed = g_hCvarSpeed.BoolValue;
+	g_iCvarTime = g_hCvarTime.IntValue;
 }
 
 void IsAllowed()
@@ -632,7 +641,7 @@ void AttachPipe(int target, int client, int weapon, int special)
 	TeleportEntity(entity, NULL_VECTOR, view_as<float>({ 90.0, 0.0, 0.0 }), NULL_VECTOR);
 
 	// Scale the Special Infected speed in L4D1 because for whatever reason when attaching the pipebomb they speed up
-	if( !g_bLeft4Dead2 && target <= MaxClients )
+	if( !g_bLeft4Dead2 && !g_bCvarSpeed && target <= MaxClients )
 	{
 		SDKHook(target, SDKHook_PreThinkPost, PreThinkPost);
 	}
@@ -658,7 +667,7 @@ void PreThinkPost(int client)
 			// Written by "Silvers"
 			// =========================
 			// Fix movement speed bug when jumping or staggering
-			if( GetEntProp(client, Prop_Send, "m_hGroundEntity") == -1 || GetEntPropFloat(client, Prop_Send, "m_staggerTimer", 1) > -1.0 )
+			if( GetEntPropEnt(client, Prop_Send, "m_hGroundEntity") == -1 || GetEntPropFloat(client, Prop_Send, "m_staggerTimer", 1) > -1.0 )
 			{
 				// Fix jumping resetting velocity to default
 				float value = GetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue");
