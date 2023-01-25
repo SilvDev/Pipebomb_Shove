@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION 		"1.14"
+#define PLUGIN_VERSION 		"1.15"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,9 @@
 
 ========================================================================================
 	Change Log:
+
+1.15 (25-Jan-2023)
+	- Fixed the "l4d_pipebomb_shove_speed" cvar causing errors in L4D2. Thanks to "Ja-Forces" for reporting.
 
 1.14 (25-Jan-2023)
 	- L4D1: Added cvar "l4d_pipebomb_shove_speed" to control if player speed is affected by the Pipebomb being attached.
@@ -212,8 +215,9 @@ public void OnPluginStart()
 	g_hCvarDistance.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarInfected.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarReload.AddChangeHook(ConVarChanged_Cvars);
-	g_hCvarSpeed.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarTime.AddChangeHook(ConVarChanged_Cvars);
+	if( !g_bLeft4Dead2 )
+		g_hCvarSpeed.AddChangeHook(ConVarChanged_Cvars);
 
 	g_hCvarL4DTime = FindConVar("pipe_bomb_timer_duration");
 	g_hCvarL4DTime.AddChangeHook(ConVarChanged_Pipe);
@@ -282,8 +286,9 @@ void GetCvars()
 	g_fCvarDistance = g_hCvarDistance.FloatValue;
 	g_iCvarInfected = g_hCvarInfected.IntValue;
 	g_iCvarReload = g_hCvarReload.IntValue;
-	g_bCvarSpeed = g_hCvarSpeed.BoolValue;
 	g_iCvarTime = g_hCvarTime.IntValue;
+	if( !g_bLeft4Dead2 )
+		g_bCvarSpeed = g_hCvarSpeed.BoolValue;
 }
 
 void IsAllowed()
