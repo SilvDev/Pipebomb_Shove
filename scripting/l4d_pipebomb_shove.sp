@@ -33,7 +33,7 @@
 	Change Log:
 
 1.14 (25-Jan-2023)
-	- L4D1: Added cvar "l4d_pipebomb_speed" to control if player speed is affected by the Pipebomb being attached.
+	- L4D1: Added cvar "l4d_pipebomb_shove_speed" to control if player speed is affected by the Pipebomb being attached.
 	- Fixed "MarkNativeAsOptional" being in the incorrect place. Thanks to "HarryPotter" for reporting.
 
 1.13 (24-Jan-2023)
@@ -108,7 +108,7 @@
 
 
 Handle sdkActivatePipe;
-ConVar g_hCvarAllow, g_hCvarDamage, g_hCvarDistance, g_hCvarInfected, g_hCvarL4DTime, g_hCvarMPGameMode, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarReload, g_hCvarTime;
+ConVar g_hCvarAllow, g_hCvarDamage, g_hCvarDistance, g_hCvarInfected, g_hCvarL4DTime, g_hCvarMPGameMode, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarReload, g_hCvarSpeed, g_hCvarTime;
 int g_iClients[MAX_GRENADES], g_iCvarInfected, g_iCvarL4DTime, g_iCvarReload, g_iCvarTime, g_iGrenades[MAX_GRENADES], g_iClassTank;
 bool g_bCvarAllow, g_bCvarSpeed, g_bMapStarted, g_bCvarSwitching, g_bLeft4Dead2, g_bLaggedMovement;
 float g_fCvarDamage, g_fCvarDistance;
@@ -198,7 +198,7 @@ public void OnPluginStart()
 	g_hCvarReload = CreateConVar(	"l4d_pipebomb_reload",				"0",			"0=Shove key, 1=Trigger with reload key, 2=Only trigger with reload key, 3=Trigger with reload key and shove.", CVAR_FLAGS );
 	g_hCvarTime = CreateConVar(		"l4d_pipebomb_time",				"6",			"Fuse duration before detonation. Game default is 6 seconds.", CVAR_FLAGS );
 	if( !g_bLeft4Dead2 )
-		g_hCvarSpeed = CreateConVar("l4d_pipebomb_speed",				"0",			"0=Prevent player speed up when Pipebomb is attached, 1=Allow speed up.", CVAR_FLAGS );
+		g_hCvarSpeed = CreateConVar("l4d_pipebomb_shove_speed",			"0",			"0=Prevent player speed up when Pipebomb is attached, 1=Allow speed up.", CVAR_FLAGS );
 	CreateConVar(					"l4d_pipebomb_shove_version",		PLUGIN_VERSION,	"Pipebomb Shove plugin version.", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	AutoExecConfig(true,			"l4d_pipebomb_shove");
 
