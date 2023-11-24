@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION 		"1.15"
+#define PLUGIN_VERSION 		"1.16"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,9 @@
 
 ========================================================================================
 	Change Log:
+
+1.16 (24-Nov-2023)
+	- L4D1: Fixed movement speed bug after staggering when the stagger timer didn't reset (due to some plugins such as "Stagger Gravity").
 
 1.15 (25-Jan-2023)
 	- Fixed the "l4d_pipebomb_shove_speed" cvar causing errors in L4D2. Thanks to "Ja-Forces" for reporting.
@@ -672,7 +675,7 @@ void PreThinkPost(int client)
 			// Written by "Silvers"
 			// =========================
 			// Fix movement speed bug when jumping or staggering
-			if( GetEntPropEnt(client, Prop_Send, "m_hGroundEntity") == -1 || GetEntPropFloat(client, Prop_Send, "m_staggerTimer", 1) > -1.0 )
+			if( GetEntPropEnt(client, Prop_Send, "m_hGroundEntity") == -1 || GetEntPropFloat(client, Prop_Send, "m_staggerTimer", 1) > GetGameTime() )
 			{
 				// Fix jumping resetting velocity to default
 				float value = GetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue");
